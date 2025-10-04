@@ -1,0 +1,51 @@
+{
+  "name": "music-sync-app",
+  "version": "1.0.0",
+  "description": "Synchronized audio playback client/host application",
+  "main": "main/index.js",
+  "scripts": {
+    "dev": "electron .",
+    "start": "electron .",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux"
+  },
+  "keywords": ["electron", "audio", "sync"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^26.6.0",
+    "electron-builder": "^24.9.1"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "ws": "^8.14.2"
+  },
+  "build": {
+    "appId": "com.musicsync.app",
+    "productName": "Music Sync",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main/**/*",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": ["nsis"]
+    },
+    "mac": {
+      "target": ["dmg"],
+      "category": "public.app-category.music"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "Audio"
+    }
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
