@@ -1,15 +1,15 @@
 // ========== Configuration ==========
 const CONFIG = {
-  CLOCK_SYNC_SAMPLES: 5,        // Number of time sync samples to collect
-  CLOCK_SYNC_INTERVAL: 100,     // ms between sync samples
-  LEAD_TIME_BUFFER: 50,         // ms buffer added to RTT for play scheduling
-  DRIFT_THRESHOLD: 50,          // ms - triggers playback rate correction
-  JUMP_THRESHOLD: 500,          // ms - triggers immediate seek
-  MAX_PLAYBACK_RATE: 1.02,      // Maximum playback rate adjustment (2%)
-  MIN_PLAYBACK_RATE: 0.98,      // Minimum playback rate adjustment (2%)
-  CORRECTION_DURATION: 2000,    // ms - how long to apply rate correction
-  RESYNC_INTERVAL: 5000,        // ms - periodic drift check interval
-  RTT_SMOOTHING_FACTOR: 0.3     // Exponential smoothing for RTT
+  CLOCK_SYNC_SAMPLES: 10,
+  CLOCK_SYNC_INTERVAL: 200,
+  LEAD_TIME_BUFFER: 600,
+  DRIFT_THRESHOLD: 100,
+  JUMP_THRESHOLD: 1000,
+  MAX_PLAYBACK_RATE: 1.02,
+  MIN_PLAYBACK_RATE: 0.98,
+  CORRECTION_DURATION: 2000,
+  RESYNC_INTERVAL: 5000,
+  RTT_SMOOTHING_FACTOR: 0.3
 };
 
 // ========== State Management ==========
@@ -23,20 +23,20 @@ const state = {
   serverUrl: null,
   
   // Clock sync
-  clockOffset: 0,               // Local time - server time (ms)
-  rtt: 0,                       // Round-trip time (ms)
-  syncSamples: [],              // Array of {offset, rtt} objects
+  clockOffset: 0,
+  rtt: 0,
+  syncSamples: [],
   
   // Playback sync
   isPlaying: false,
   lastSyncTime: 0,
+  lastSyncPosition: 0,
   correctionTimeout: null,
   resyncInterval: null
 };
 
 // ========== DOM Elements ==========
 const elements = {
-  // Connection
   wsUrl: document.getElementById('wsUrl'),
   roomId: document.getElementById('roomId'),
   peerName: document.getElementById('peerName'),
@@ -44,7 +44,6 @@ const elements = {
   disconnectBtn: document.getElementById('disconnectBtn'),
   connectionStatus: document.getElementById('connectionStatus'),
   
-  // Host
   selectFileBtn: document.getElementById('selectFileBtn'),
   fileInfo: document.getElementById('fileInfo'),
   startServerBtn: document.getElementById('startServerBtn'),
@@ -52,13 +51,11 @@ const elements = {
   becomeHostBtn: document.getElementById('becomeHostBtn'),
   hostStatus: document.getElementById('hostStatus'),
   
-  // Client
   fileUrl: document.getElementById('fileUrl'),
   loadFileBtn: document.getElementById('loadFileBtn'),
   readyBtn: document.getElementById('readyBtn'),
   loadStatus: document.getElementById('loadStatus'),
   
-  // Playback
   playBtn: document.getElementById('playBtn'),
   pauseBtn: document.getElementById('pauseBtn'),
   seekInput: document.getElementById('seekInput'),
@@ -68,14 +65,12 @@ const elements = {
   progressBar: document.getElementById('progressBar'),
   timeDisplay: document.getElementById('timeDisplay'),
   
-  // Sync status
   clockOffset: document.getElementById('clockOffset'),
   rtt: document.getElementById('rtt'),
   currentDrift: document.getElementById('currentDrift'),
   playbackRate: document.getElementById('playbackRate'),
   syncQuality: document.getElementById('syncQuality'),
   
-  // Logs
   logContainer: document.getElementById('logContainer'),
   clearLogsBtn: document.getElementById('clearLogsBtn')
 };
@@ -88,7 +83,6 @@ function log(message, type = 'info') {
   entry.innerHTML = `<span class="log-timestamp">[${timestamp}]</span>${message}`;
   elements.logContainer.appendChild(entry);
   elements.logContainer.scrollTop = elements.logContainer.scrollHeight;
-  
   console.log(`[${type.toUpperCase()}] ${message}`);
 }
 
@@ -106,13 +100,11 @@ async function performClockSync() {
     
     const t0 = Date.now();
     
-    // Send time request
     state.ws.send(JSON.stringify({
       type: 'time_request',
       clientTimestamp: t0
     }));
     
-    // Wait for response (handled in message handler)
     await new Promise(resolve => {
       const handler = (event) => {
         const msg = JSON.parse(event.data);
@@ -120,7 +112,6 @@ async function performClockSync() {
           const t3 = Date.now();
           const t1 = msg.serverTimestamp;
           
-          // Calculate offset and RTT
           const rtt = t3 - t0;
           const offset = t1 - (t0 + rtt / 2);
           
@@ -133,11 +124,9 @@ async function performClockSync() {
     });
   }
   
-  // Calculate median offset (more robust than mean)
   const sortedOffsets = state.syncSamples.map(s => s.offset).sort((a, b) => a - b);
   const medianOffset = sortedOffsets[Math.floor(sortedOffsets.length / 2)];
   
-  // Calculate smoothed RTT
   const avgRtt = state.syncSamples.reduce((sum, s) => sum + s.rtt, 0) / state.syncSamples.length;
   state.rtt = state.rtt === 0 ? avgRtt : (state.rtt * (1 - CONFIG.RTT_SMOOTHING_FACTOR) + avgRtt * CONFIG.RTT_SMOOTHING_FACTOR);
   
@@ -151,17 +140,12 @@ function serverTimeNow() {
   return Date.now() - state.clockOffset;
 }
 
-function localTimeFromServer(serverTime) {
-  return serverTime + state.clockOffset;
-}
-
 // ========== Sync Display ==========
 function updateSyncDisplay() {
   elements.clockOffset.textContent = `${state.clockOffset.toFixed(1)} ms`;
   elements.rtt.textContent = `${state.rtt.toFixed(1)} ms`;
   elements.playbackRate.textContent = `${elements.audioPlayer.playbackRate.toFixed(2)}x`;
   
-  // Update sync quality badge
   const absDrift = Math.abs(parseFloat(elements.currentDrift.textContent) || 0);
   let quality, className;
   
@@ -183,38 +167,31 @@ function updateSyncDisplay() {
   elements.syncQuality.className = `value badge ${className}`;
 }
 
-// ========== Playback Sync Logic ==========
-function schedulePlay(position, playAtServerTime) {
-  const playAtLocalTime = localTimeFromServer(playAtServerTime);
-  const delay = playAtLocalTime - Date.now();
+// ========== Playback Sync Logic (Simplified Fixed-Delay Approach) ==========
+function schedulePlay(position) {
+  const SYNC_DELAY = 1000; // Fixed 1 second delay for all clients
   
-  log(`Scheduling play at position ${position.toFixed(2)}s in ${delay.toFixed(0)}ms`, 'info');
+  log(`Scheduling play at position ${position.toFixed(2)}s in ${SYNC_DELAY}ms`, 'info');
   
-  if (delay < 0) {
-    log(`Warning: Play time is in the past (${delay}ms), playing immediately`, 'warning');
-    elements.audioPlayer.currentTime = position;
-    elements.audioPlayer.play().catch(err => log(`Play error: ${err.message}`, 'error'));
-    state.isPlaying = true;
-    startDriftMonitoring();
-    return;
-  }
+  // Set position immediately
+  elements.audioPlayer.currentTime = position;
   
-  // Schedule playback
+  // Schedule playback after fixed delay
   setTimeout(() => {
-    elements.audioPlayer.currentTime = position;
     elements.audioPlayer.play().catch(err => log(`Play error: ${err.message}`, 'error'));
     state.isPlaying = true;
     state.lastSyncTime = Date.now();
+    state.lastSyncPosition = position;
     startDriftMonitoring();
     log('Playback started', 'success');
-  }, delay);
+  }, SYNC_DELAY);
 }
 
 function startDriftMonitoring() {
   stopDriftMonitoring();
   
   state.resyncInterval = setInterval(() => {
-    if (!state.isPlaying || !state.isHost) {
+    if (!state.isPlaying || state.isHost) {
       checkDrift();
     }
   }, CONFIG.RESYNC_INTERVAL);
@@ -234,49 +211,38 @@ function stopDriftMonitoring() {
 function checkDrift() {
   if (!state.isPlaying) return;
   
-  // Calculate expected position based on server time
-  const currentServerTime = serverTimeNow();
-  const timeSinceLastSync = (currentServerTime - state.lastSyncTime) / 1000;
+  const timeSinceLastSync = (Date.now() - state.lastSyncTime) / 1000;
   const expectedPosition = state.lastSyncPosition + timeSinceLastSync;
   
   const actualPosition = elements.audioPlayer.currentTime;
-  const drift = (actualPosition - expectedPosition) * 1000; // Convert to ms
+  const drift = (actualPosition - expectedPosition) * 1000;
   
   elements.currentDrift.textContent = `${drift.toFixed(1)} ms`;
   updateSyncDisplay();
   
-  // Apply correction based on drift magnitude
   if (Math.abs(drift) > CONFIG.JUMP_THRESHOLD) {
-    // Large drift: immediate seek
     log(`Large drift detected (${drift.toFixed(0)}ms), seeking to correct position`, 'warning');
     elements.audioPlayer.currentTime = expectedPosition;
     state.lastSyncPosition = expectedPosition;
-    state.lastSyncTime = currentServerTime;
+    state.lastSyncTime = Date.now();
   } else if (Math.abs(drift) > CONFIG.DRIFT_THRESHOLD) {
-    // Moderate drift: adjust playback rate
     correctPlaybackRate(drift);
   }
 }
 
 function correctPlaybackRate(driftMs) {
-  // Clear any existing correction
   if (state.correctionTimeout) {
     clearTimeout(state.correctionTimeout);
   }
   
-  // Calculate correction rate (subtle adjustment)
-  // Positive drift means we're ahead, so slow down
-  // Negative drift means we're behind, so speed up
   const correctionFactor = -driftMs / CONFIG.CORRECTION_DURATION;
   let newRate = 1.0 + (correctionFactor / 1000);
   
-  // Clamp to limits
   newRate = Math.max(CONFIG.MIN_PLAYBACK_RATE, Math.min(CONFIG.MAX_PLAYBACK_RATE, newRate));
   
   log(`Applying playback rate correction: ${newRate.toFixed(3)}x for ${CONFIG.CORRECTION_DURATION}ms`, 'info');
   elements.audioPlayer.playbackRate = newRate;
   
-  // Return to normal rate after correction period
   state.correctionTimeout = setTimeout(() => {
     elements.audioPlayer.playbackRate = 1.0;
     log('Playback rate returned to normal', 'info');
@@ -309,10 +275,8 @@ elements.connectBtn.addEventListener('click', async () => {
       elements.connectBtn.style.display = 'none';
       elements.disconnectBtn.style.display = 'inline-block';
       
-      // Perform clock sync
       await performClockSync();
       
-      // Join room
       state.roomId = roomId;
       state.ws.send(JSON.stringify({
         type: 'join',
@@ -320,7 +284,6 @@ elements.connectBtn.addEventListener('click', async () => {
         name: name
       }));
       
-      // Enable controls
       elements.becomeHostBtn.disabled = false;
       elements.selectFileBtn.disabled = false;
       elements.loadFileBtn.disabled = false;
@@ -383,7 +346,6 @@ function handleWebSocketMessage(event) {
           elements.hostStatus.style.background = '#d4edda';
           elements.hostStatus.style.color = '#155724';
           
-          // Enable host controls
           elements.playBtn.disabled = false;
           elements.pauseBtn.disabled = false;
           elements.seekBtn.disabled = false;
@@ -393,7 +355,6 @@ function handleWebSocketMessage(event) {
           elements.hostStatus.style.background = '#d1ecf1';
           elements.hostStatus.style.color = '#0c5460';
           
-          // Disable host-only controls
           elements.playBtn.disabled = true;
           elements.pauseBtn.disabled = true;
           elements.seekBtn.disabled = true;
@@ -409,9 +370,7 @@ function handleWebSocketMessage(event) {
         
       case 'play':
         log(`Received play command at position ${message.position}`, 'info');
-        state.lastSyncPosition = message.position;
-        state.lastSyncTime = message.playAt;
-        schedulePlay(message.position, message.playAt);
+        schedulePlay(message.position);
         break;
         
       case 'pause':
@@ -428,9 +387,7 @@ function handleWebSocketMessage(event) {
         
       case 'force_sync':
         log(`Received force sync command`, 'warning');
-        state.lastSyncPosition = message.position;
-        state.lastSyncTime = message.syncAt;
-        schedulePlay(message.position, message.syncAt);
+        schedulePlay(message.position);
         break;
         
       case 'client_joined':
@@ -448,8 +405,6 @@ function handleWebSocketMessage(event) {
       case 'error':
         log(`Server error: ${message.message}`, 'error');
         break;
-        
-      // time_response is handled in performClockSync
     }
   } catch (err) {
     log(`Error processing message: ${err.message}`, 'error');
@@ -576,7 +531,6 @@ elements.readyBtn.addEventListener('click', () => {
     return;
   }
   
-  // Notify server that client is ready
   state.ws.send(JSON.stringify({
     type: 'ready',
     roomId: state.roomId
@@ -585,14 +539,12 @@ elements.readyBtn.addEventListener('click', () => {
   log('Sent ready signal', 'success');
   elements.readyBtn.disabled = true;
   
-  // If this is the host, enable playback controls
   if (state.isHost) {
     elements.playBtn.disabled = false;
     elements.pauseBtn.disabled = false;
     elements.seekBtn.disabled = false;
     elements.forceSyncBtn.disabled = false;
     
-    // Send load command to all clients
     if (state.serverUrl && state.selectedFile) {
       state.ws.send(JSON.stringify({
         type: 'load',
@@ -612,16 +564,18 @@ elements.playBtn.addEventListener('click', () => {
   }
   
   const position = elements.audioPlayer.currentTime;
-  const leadTime = state.rtt + CONFIG.LEAD_TIME_BUFFER;
   
   state.ws.send(JSON.stringify({
     type: 'play',
     roomId: state.roomId,
     position: position,
-    leadTime: leadTime
+    leadTime: 1000
   }));
   
-  log(`Sending play command (position: ${position.toFixed(2)}s, lead: ${leadTime.toFixed(0)}ms)`, 'info');
+  log(`Sending play command (position: ${position.toFixed(2)}s, lead: 1000ms)`, 'info');
+  
+  // Host also schedules own playback
+  schedulePlay(position);
 });
 
 elements.pauseBtn.addEventListener('click', () => {
@@ -637,6 +591,11 @@ elements.pauseBtn.addEventListener('click', () => {
     roomId: state.roomId,
     position: position
   }));
+  
+  // Pause own playback
+  elements.audioPlayer.pause();
+  state.isPlaying = false;
+  stopDriftMonitoring();
   
   log(`Sending pause command at position ${position.toFixed(2)}s`, 'info');
 });
@@ -660,6 +619,9 @@ elements.seekBtn.addEventListener('click', () => {
     position: position
   }));
   
+  // Seek own playback
+  elements.audioPlayer.currentTime = position;
+  
   log(`Sending seek command to ${position.toFixed(2)}s`, 'info');
 });
 
@@ -670,14 +632,29 @@ elements.forceSyncBtn.addEventListener('click', () => {
   }
   
   const position = elements.audioPlayer.currentTime;
-  const leadTime = state.rtt + CONFIG.LEAD_TIME_BUFFER;
   
+  // Pause everyone first
   state.ws.send(JSON.stringify({
-    type: 'force_sync',
+    type: 'pause',
     roomId: state.roomId,
-    position: position,
-    leadTime: leadTime
+    position: position
   }));
+  
+  elements.audioPlayer.pause();
+  state.isPlaying = false;
+  stopDriftMonitoring();
+  
+  // Schedule synchronized restart
+  setTimeout(() => {
+    state.ws.send(JSON.stringify({
+      type: 'play',
+      roomId: state.roomId,
+      position: position,
+      leadTime: 1000
+    }));
+    
+    schedulePlay(position);
+  }, 100);
   
   log(`Force sync at position ${position.toFixed(2)}s`, 'warning');
 });
