@@ -233,7 +233,7 @@ See [protocol.md](protocol.md) for message format specification. Add new message
 
 ## License
 
-MIT License - See LICENSE file
+GNU General Public License v3.0 - See LICENSE file
 
 ## Support
 
