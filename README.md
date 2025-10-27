@@ -233,7 +233,7 @@ See [protocol.md](protocol.md) for message format specification. Add new message
 
 ## License
 
-GNU General Public License v3.0 - See LICENSE file
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
 ## Support
 
