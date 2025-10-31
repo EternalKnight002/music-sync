@@ -3,14 +3,14 @@ FROM node:18-alpine
 # Set working directory
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Copy package files from server directory
+COPY server/package*.json ./
 
 # Install dependencies
 RUN npm ci --only=production
 
 # Copy application files
-COPY server.js ./
+COPY server/server.js ./
 
 # Expose port (Railway will set PORT env var)
 EXPOSE 8080
