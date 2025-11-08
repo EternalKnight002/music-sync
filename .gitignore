@@ -52,3 +52,5 @@ temp/
 *.ogg
 *.flac
 *.m4a
+
+/server/server.js
