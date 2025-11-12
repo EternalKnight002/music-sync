@@ -53,4 +53,4 @@ temp/
 *.flac
 *.m4a
 
-/server/server.js
+server/
