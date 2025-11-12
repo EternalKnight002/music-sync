@@ -254,7 +254,8 @@ function correctPlaybackRate(driftMs) {
 
 // ========== WebSocket Connection ==========
 elements.connectBtn.addEventListener('click', async () => {
-  const wsUrl = elements.wsUrl.value.trim();
+  const inputUrl = (elements.wsUrl && elements.wsUrl.value) ? elements.wsUrl.value.trim() : '';
+  const wsUrl = inputUrl || window.CONFIG?.SIGNALING_URL || '';
   const roomId = elements.roomId.value.trim();
   const name = elements.peerName.value.trim() || 'Anonymous';
   
