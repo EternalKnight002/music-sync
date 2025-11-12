@@ -233,7 +233,7 @@ See [protocol.md](protocol.md) for message format specification. Add new message
 
 ## License
 
-MIT License - See LICENSE file
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
 ## Support
 
