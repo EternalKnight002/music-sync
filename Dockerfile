@@ -1,23 +1,21 @@
+# Dockerfile - repo root
 FROM node:18-alpine
-
-# Set working directory
 WORKDIR /app
 
-# Copy package files from server directory
-COPY server/package*.json ./
+# copy package files first for caching
+COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# install production deps only
+RUN npm ci --production
 
-# Copy application files
-COPY server/server.js ./
+# copy the rest of the source files
+COPY . .
 
-# Expose port (Railway will set PORT env var)
+# expose port (Railway will set PORT env)
 EXPOSE 8080
 
-# Health check
+# healthcheck uses /health endpoint defined in server.js
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:' + (process.env.PORT || 8080) + '/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); });"
+  CMD node -e "require('http').get('http://localhost:' + (process.env.PORT || 8080) + '/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1) })"
 
-# Start server
 CMD ["node", "server.js"]

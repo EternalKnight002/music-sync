@@ -426,6 +426,8 @@ elements.selectFileBtn.addEventListener('click', async () => {
     }
   } catch (err) {
     log(`File selection error: ${err.message}`, 'error');
+    log(`File selection error: ${err.message}`, 'error');
+    console.error('Full error:', err);
   }
 });
 
